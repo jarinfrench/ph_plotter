@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __author__ = "Yuji Ikeda"
 
@@ -17,6 +16,10 @@ class CommonArgumentsAdder(object):
         parser.add_argument("--d_freq",
                             type=float,
                             help="Pitch for frequency (THz).")
+        parser.add_argument("--dos_max",
+                            default=0.4,
+                            type=float,
+                            help="Maximum DOS (THz^-1).")
         parser.add_argument("--sf_max",
                             default=2.0,
                             type=float,
@@ -33,10 +36,12 @@ class CommonArgumentsAdder(object):
                             type=str,
                             help="Linecolor.")
         parser.add_argument("--colormap_p",
+                            nargs="+",
                             default="r",
                             type=str,
                             help="Colors of the positive colormap.")
         parser.add_argument("--colormap_n",
+                            nargs="+",
                             default="b",
                             type=str,
                             help="Colors of the negative colormap.")

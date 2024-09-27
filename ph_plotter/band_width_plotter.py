@@ -2,19 +2,80 @@
 # -*- coding: utf-8 -*-
 from __future__ import (absolute_import, division,
                         print_function, unicode_literals)
-
-__author__ = "Yuji Ikeda"
-
 import h5py
 import numpy as np
+from matplotlib.ticker import AutoMinorLocator
 from .band_plotter import BandPlotter
 from .plotter import read_band_labels
+from .colormap_creator import ColormapCreator
+
 from ph_unfolder.irreps.irreps import extract_degeneracy_from_ir_label
+
+__author__ = 'Yuji Ikeda'
+
+
+class FitPointLoader(object):
+    def __init__(self, data, is_sorted):
+        self._load(data)
+        if is_sorted:
+            self._sort_data()
+
+    def _load(self, data):
+        indices_nonzero = np.where(np.isfinite(data['norms_s']))
+
+        frequencies = []
+        widths = []
+        fiterrs = []
+        ir_labels = []
+        for index in indices_nonzero[0]:
+            ir_label = str(data['ir_labels'][index], encoding='ascii')
+            degeneracy = extract_degeneracy_from_ir_label(ir_label)
+            for i in range(degeneracy):
+                frequencies.append(data['peaks_s'][index])
+                widths     .append(data['widths_s'][index])
+                fiterrs    .append(data['fitting_errors'][index])
+                ir_labels  .append(ir_label)
+
+        self._distance = data['distance'][...]
+        self._frequencies = np.asarray(frequencies)
+        self._widths      = np.asarray(widths)
+        self._fiterrs     = np.asarray(fiterrs)
+        self._ir_labels   = np.asarray(ir_labels)
+
+    def _sort_data(self):
+        indices = np.argsort(self._frequencies)
+
+        self._frequencies = self._frequencies[indices]
+        self._widths      = self._widths     [indices]
+        self._fiterrs     = self._fiterrs    [indices]
+        self._ir_labels   = self._ir_labels  [indices]
+
+    def get_distance(self):
+        return self._distance
+
+    def get_frequencies(self):
+        return self._frequencies
+
+    def get_widths(self):
+        return self._widths
+
+    def get_fiterrs(self):
+        return self._fiterrs
+
+    def get_ir_labels(self):
+        return self._ir_labels
 
 
 # TODO(ikeda): Sort also ir_labels
 class BandWidthPlotter(BandPlotter):
-    def load_data(self, data_file="sf_fitted.hdf5"):
+    def __init__(self, *args, **kwargs):
+        super(BandWidthPlotter, self).__init__(*args, **kwargs)
+        self._set_is_sorted()
+
+    def _set_is_sorted(self):
+        self._is_sorted = True
+
+    def load_data(self, data_file="sf_fit.hdf5"):
         print("Reading data_file: ", end="")
         with h5py.File(data_file, 'r') as data:
             self._paths = np.array(data['paths'])
@@ -34,48 +95,43 @@ class BandWidthPlotter(BandPlotter):
             distances = []
             frequencies = []
             widths = []
+            fiterrs = []
+            ir_labels = []
             for ipath in range(npaths):
                 distances_on_path = []
-                frequencies_on_path = []
-                widths_on_path = []
                 for ip in range(npoints):
-                    group = '{}/{}/'.format(ipath, ip)
+                    group_name = '{}/{}/'.format(ipath, ip)
+                    group = data[group_name]
                     data_points.append(
-                        {k: np.array(data[group + k]) for k in keys}
+                        {k: group[k][...] for k in keys}
                     )
 
-                    distances_on_path.append(np.array(data[group + 'distance']))
+                    fit_point_loader = FitPointLoader(group, self._is_sorted)
 
-                    indices_nonzero = np.where(np.isfinite(data[group + 'norms_s']))
-                    ir_labels = np.array(data[group + 'ir_labels'])
+                    distances_on_path.append(fit_point_loader.get_distance())
+                    frequencies_on_point = fit_point_loader.get_frequencies()
+                    widths_on_point      = fit_point_loader.get_widths()
+                    fiterrs_on_point     = fit_point_loader.get_fiterrs()
+                    ir_labels_on_point   = fit_point_loader.get_ir_labels()
 
-                    frequencies_on_point = []
-                    widths_on_point = []
-                    for index in indices_nonzero[0]:
-                        degeneracy = extract_degeneracy_from_ir_label(ir_labels[index])
-                        for i in range(degeneracy):
-                            frequencies_on_point.append(np.array(data[group + 'peaks_s' ])[index])
-                            widths_on_point     .append(np.array(data[group + 'widths_s'])[index])
-
-                    indices_sort = np.argsort(frequencies_on_point)
-
-                    frequencies_on_path.append(np.array(frequencies_on_point)[indices_sort])
-                    widths_on_path     .append(np.array(widths_on_point     )[indices_sort])
+                    frequencies.append(frequencies_on_point)
+                    widths.append(widths_on_point)
+                    fiterrs.append(fiterrs_on_point)
+                    ir_labels.append(ir_labels_on_point)
 
                 distances.append(distances_on_path)
-                frequencies.append(frequencies_on_path)
-                widths.append(widths_on_path)
+
         print("Finished")
 
-        distances   = np.array(distances)
-        frequencies = np.array(frequencies)
-        widths      = np.array(widths)
 
         self._data_points = data_points
 
+        distances = np.array(distances)
         self._distances = distances / distances[-1, -1]
-        self._frequencies = frequencies
-        self._bandwidths = widths
+        self._frequencies = np.asarray(frequencies)
+        self._bandwidths = np.asarray(widths)
+        self._fiterrs = np.asarray(fiterrs)
+        self._ir_labels = np.asarray(ir_labels)
 
         band_labels = read_band_labels("band.conf")
         print("band_labels:", band_labels)
@@ -89,24 +145,23 @@ class BandWidthPlotter(BandPlotter):
         frequencies = self._frequencies
         bandwidths = self._bandwidths
 
-        npath, nqpoint, nband = frequencies.shape
-        for ipath in range(npath):
-            lines = ax.plot(
-                distances[ipath],
-                frequencies[ipath] * variables["unit"],
-                variables["linecolor"],
-                dashes=variables["dashes"],
-                linewidth=variables["linewidth"],
+        nq, nband = frequencies.shape
+        lines = ax.plot(
+            distances.flatten(),
+            frequencies * variables["unit"],
+            variables["linecolor"],
+            dashes=variables["dashes"],
+            linewidth=variables["linewidth"],
             )
-            for ib in range(nband):
-                ax.fill_between(
-                    distances[ipath],
-                    (frequencies[ipath, :, ib] + bandwidths[ipath, :, ib]) * variables["unit"],
-                    (frequencies[ipath, :, ib] - bandwidths[ipath, :, ib]) * variables["unit"],
-                    edgecolor="none",
-                    facecolor=variables['linecolor'],
-                    alpha=variables['alpha'],
-                )
+        for ib in range(nband):
+            ax.fill_between(
+                distances.flatten(),
+                (frequencies[:, ib] + bandwidths[:, ib]) * variables["unit"],
+                (frequencies[:, ib] - bandwidths[:, ib]) * variables["unit"],
+                edgecolor="none",
+                facecolor=variables['linecolor'],
+                alpha=variables['alpha'],
+            )
 
     def plot_selected_curve(self, ax, ipath, ib):
         variables = self._variables
@@ -132,8 +187,4 @@ class BandWidthPlotter(BandPlotter):
         )
 
     def create_figure_name(self):
-        variables = self._variables
-        figure_name = "band_{}.{}".format(
-            variables["freq_unit"],
-            variables["figure_type"])
-        return figure_name
+        return "band_width.{}".format(self._variables["figure_type"])

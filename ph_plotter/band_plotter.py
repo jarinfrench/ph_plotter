@@ -1,24 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __author__ = "Yuji Ikeda"
 
 import numpy as np
 from matplotlib.ticker import AutoMinorLocator
+
+from .file_io import read_band_hdf5, read_band_yaml
 from .plotter import Plotter, read_band_labels
-from .file_io import read_band_yaml
 
 
 class BandPlotter(Plotter):
     def load_data(self, data_file="band.yaml"):
-        print("Reading band.yaml: ", end="")
-        distances, frequencies = read_band_yaml(yaml_file=data_file)
-        print("Finished")
+        if data_file == "band.hdf5":
+            print("Reading band.hdf5: ", end="")
+            distances, frequencies = read_band_hdf5(data_file)
+            print("Finished")
+        else:
+            print("Reading band.yaml: ", end="")
+            distances, frequencies = read_band_yaml(yaml_file=data_file)
+            print("Finished")
 
         self._distances = distances / distances[-1, -1]
         self._frequencies = frequencies
+        print(np.min(frequencies), np.max(frequencies))
 
         band_labels = read_band_labels("band.conf")
         print("band_labels:", band_labels)
@@ -40,7 +46,7 @@ class BandPlotter(Plotter):
         ax.set_xticks([0.0] + list(distances[:, -1]))
         if self._band_labels is not None:
             ax.set_xticklabels(self._band_labels)
-        ax.set_xlabel("Wave vector")
+        ax.set_xlabel("Wavevector")
         ax.set_xlim(distances[0, 0], distances[-1, -1])
 
         ax.set_yticks(np.linspace(f_min, f_max, n_freq))
@@ -50,11 +56,11 @@ class BandPlotter(Plotter):
         mly = AutoMinorLocator(2)
         ax.yaxis.set_minor_locator(mly)
 
-        ax.grid(True, axis='x')
+        ax.grid(True, axis="x")
         # for y in np.linspace(f_min, f_max, n_freq):
         #     ax.axhline(y, color="#000000", linestyle=":")
         # zero axis
-        ax.axhline(0, color="#b0b0b0", linewidth=0.8)
+        ax.axhline(0, color="#b0b0b0", linewidth=0.8, zorder=0)
 
     def plot(self, ax):
         variables = self._variables
@@ -88,6 +94,6 @@ class BandPlotter(Plotter):
     def create_figure_name(self):
         variables = self._variables
         figure_name = "band_{}.{}".format(
-            variables["freq_unit"],
-            variables["figure_type"])
+            variables["freq_unit"], variables["figure_type"]
+        )
         return figure_name
